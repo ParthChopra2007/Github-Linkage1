@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Last Commit — Repository Timestamp Lookup</title>
+<style>
+  :root{
+    --ink: #0e1013;
+    --card: #14171c;
+    --card-border: #23272e;
+    --text: #e7e8ea;
+    --muted: #868c96;
+    --amber: #e8a33d;
+    --amber-dim: #6b551f;
+    --green: #5fb87a;
+    --red: #d9705f;
+    --blue: #6ea8e8;
+    --mono: 'IBM Plex Mono', 'SF Mono', 'Menlo', monospace;
+    --sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body{
+    margin:0;
+    min-height:100vh;
+    background:
+      radial-gradient(circle at 15% 0%, rgba(232,163,61,0.07), transparent 45%),
+      var(--ink);
+    color:var(--text);
+    font-family:var(--sans);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:32px 16px;
+  }
+
+  .wrap{
+    width:100%;
+    max-width:640px;
+  }
+
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--amber);
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+
+  .eyebrow::before{
+    content:"";
+    width:6px;height:6px;border-radius:50%;
+    background:var(--amber);
+    box-shadow:0 0 8px var(--amber);
+  }
+
+  h1{
+    font-family:var(--mono);
+    font-size:clamp(24px, 4vw, 32px);
+    font-weight:600;
+    margin:0 0 8px;
+    letter-spacing:-0.01em;
+  }
+
+  .sub{
+    color:var(--muted);
+    font-size:14.5px;
+    line-height:1.5;
+    margin:0 0 28px;
+    max-width:50ch;
+  }
+
+  form{
+    display:flex;
+    gap:0;
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:10px;
+    overflow:hidden;
+    transition:border-color .15s ease;
+  }
+
+  form:focus-within{
+    border-color:var(--amber-dim);
+  }
+
+  .prompt{
+    font-family:var(--mono);
+    color:var(--amber);
+    padding:0 0 0 16px;
+    display:flex;
+    align-items:center;
+    font-size:14px;
+    user-select:none;
+  }
+
+  input[type="text"]{
+    flex:1;
+    background:transparent;
+    border:none;
+    outline:none;
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:14px;
+    padding:15px 10px;
+    min-width:0;
+  }
+
+  input[type="text"]::placeholder{
+    color:#4a4f57;
+  }
+
+  button{
+    border:none;
+    background:var(--amber);
+    color:#1a1200;
+    font-family:var(--sans);
+    font-weight:600;
+    font-size:14px;
+    padding:0 22px;
+    cursor:pointer;
+    transition:filter .15s ease, transform .1s ease;
+  }
+
+  button:hover{ filter:brightness(1.08); }
+  button:active{ transform:scale(0.98); }
+  button:disabled{ opacity:0.5; cursor:not-allowed; }
+
+  .result-area{
+    margin-top:26px;
+    min-height:2px;
+  }
+
+  .state{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--muted);
+    padding:14px 2px;
+  }
+
+  .state.err{ color:var(--red); }
+
+  .ledger{
+    border:1px solid var(--card-border);
+    background:var(--card);
+    border-radius:10px;
+    padding:22px 22px 20px;
+    position:relative;
+    animation: rise .35s ease;
+  }
+
+  @keyframes rise{
+    from{ opacity:0; transform:translateY(6px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+
+  .ledger-line{
+    position:absolute;
+    left:33px;
+    top:0;
+    bottom:0;
+    width:1px;
+    background:linear-gradient(var(--card-border), transparent);
+  }
+
+  .node-row{
+    display:flex;
+    align-items:flex-start;
+    gap:14px;
+    position:relative;
+  }
+
+  .node{
+    width:10px;height:10px;border-radius:50%;
+    background:var(--green);
+    box-shadow:0 0 0 4px rgba(95,184,122,0.15);
+    margin-top:5px;
+    flex-shrink:0;
+  }
+
+  .repo-name{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:4px;
+    word-break:break-all;
+  }
+
+  .commit-msg{
+    font-size:16px;
+    font-weight:600;
+    line-height:1.4;
+    margin-bottom:10px;
+  }
+
+  .meta-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px 14px;
+    font-size:13px;
+    color:var(--muted);
+    font-family:var(--mono);
+    margin-bottom:14px;
+  }
+
+  .meta-row .hash{
+    color:var(--amber);
+  }
+
+  .timestamp-block{
+    border-top:1px dashed var(--card-border);
+    padding-top:14px;
+    margin-top:2px;
+  }
+
+  .timestamp-label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.1em;
+    color:var(--muted);
+    margin-bottom:6px;
+  }
+
+  .timestamp-big{
+    font-family:var(--mono);
+    font-size:clamp(19px, 3.4vw, 24px);
+    font-weight:600;
+    color:var(--text);
+  }
+
+  .relative-time{
+    font-size:13px;
+    color:var(--green);
+    margin-top:4px;
+  }
+
+  .tasks-block{
+    border-top:1px dashed var(--card-border);
+    padding-top:14px;
+    margin-top:16px;
+  }
+
+  .tasks-label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.1em;
+    color:var(--muted);
+    margin-bottom:10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+
+  .tasks-label .exec-time{
+    text-transform:none;
+    letter-spacing:0;
+    font-family:var(--mono);
+    color:var(--blue);
+    font-size:12px;
+  }
+
+  .task-list{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    max-height:280px;
+    overflow-y:auto;
+  }
+
+  .task-item{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:var(--mono);
+    font-size:13px;
+    padding:8px 10px;
+    background:#0e1013;
+    border:1px solid var(--card-border);
+    border-radius:6px;
+  }
+
+  .task-status{
+    flex-shrink:0;
+    width:64px;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    padding:2px 6px;
+    border-radius:4px;
+    text-align:center;
+  }
+
+  .task-status.added{ background:rgba(95,184,122,0.15); color:var(--green); }
+  .task-status.modified{ background:rgba(232,163,61,0.15); color:var(--amber); }
+  .task-status.removed{ background:rgba(217,112,95,0.15); color:var(--red); }
+  .task-status.renamed{ background:rgba(110,168,232,0.15); color:var(--blue); }
+
+  .task-file{
+    word-break:break-all;
+    color:var(--text);
+    flex:1;
+  }
+
+  .no-files{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--muted);
+    font-style:italic;
+  }
+
+  footer{
+    margin-top:26px;
+    font-size:12px;
+    color:#4a4f57;
+    text-align:center;
+    font-family:var(--mono);
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="eyebrow">repo inspector</div>
+  <h1>When was it last touched?</h1>
+  <p class="sub">Paste any public GitHub repository link. This looks up the most recent commit, when it landed, and exactly what files it touched.</p>
+
+  <form id="lookup-form">
+    <span class="prompt">$</span>
+    <input type="text" id="repo-input" placeholder="https://github.com/owner/repository" autocomplete="off" spellcheck="false">
+    <button type="submit" id="submit-btn">Check</button>
+  </form>
+
+  <div class="result-area" id="result-area"></div>
+
+  <footer>uses the public GitHub REST API · no login required</footer>
+</div>
+
+<script>
+  const form = document.getElementById('lookup-form');
+  const input = document.getElementById('repo-input');
+  const resultArea = document.getElementById('result-area');
+  const btn = document.getElementById('submit-btn');
+
+  function parseRepoUrl(raw) {
+    let s = raw.trim();
+    s = s.replace(/^git\+/, '').replace(/\.git$/, '').replace(/\/$/, '');
+    let match = s.match(/^([\w.-]+)\/([\w.-]+)$/);
+    if (match) return { owner: match[1], repo: match[2] };
+
+    try {
+      const url = new URL(s);
+      if (!/github\.com$/i.test(url.hostname)) return null;
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts.length < 2) return null;
+      return { owner: parts[0], repo: parts[1] };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function relativeTime(dateStr) {
+    const then = new Date(dateStr).getTime();
+    const now = Date.now();
+    const diffSec = Math.round((now - then) / 1000);
+    const units = [
+      ['year', 31536000], ['month', 2592000], ['week', 604800],
+      ['day', 86400], ['hour', 3600], ['minute', 60]
+    ];
+    for (const [name, secs] of units) {
+      const val = Math.floor(diffSec / secs);
+      if (val >= 1) return `${val} ${name}${val > 1 ? 's' : ''} ago`;
+    }
+    return 'just now';
+  }
+
+  function setState(html, isErr) {
+    resultArea.innerHTML = `<div class="state${isErr ? ' err' : ''}">${html}</div>`;
+  }
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function statusLabel(status) {
+    const map = { added: 'added', modified: 'modified', removed: 'removed', renamed: 'renamed' };
+    return map[status] || status || 'changed';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const raw = input.value;
+    const parsed = parseRepoUrl(raw);
+
+    if (!raw.trim()) {
+      setState('Enter a repository link first.', true);
+      return;
+    }
+    if (!parsed) {
+      setState('That doesn\'t look like a GitHub repository link. Try a format like https://github.com/owner/repository', true);
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    setState('Contacting GitHub…', false);
+
+    try {
+      const listUrl = `https://api.github.com/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/commits?per_page=1`;
+      const listRes = await fetch(listUrl, { headers: { 'Accept': 'application/vnd.github+json' } });
+
+      if (listRes.status === 404) {
+        setState(`No repository found at ${escapeHtml(parsed.owner)}/${escapeHtml(parsed.repo)}. Check the link and try again.`, true);
+        return;
+      }
+      if (listRes.status === 403) {
+        setState('GitHub is rate-limiting anonymous requests right now. Wait a minute and try again.', true);
+        return;
+      }
+      if (!listRes.ok) {
+        setState(`GitHub returned an error (status ${listRes.status}).`, true);
+        return;
+      }
+
+      const listData = await listRes.json();
+      if (!Array.isArray(listData) || listData.length === 0) {
+        setState('This repository has no commits yet.', true);
+        return;
+      }
+
+      const latestSha = listData[0].sha;
+
+      const detailUrl = `https://api.github.com/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/commits/${latestSha}`;
+      const detailRes = await fetch(detailUrl, { headers: { 'Accept': 'application/vnd.github+json' } });
+
+      if (!detailRes.ok) {
+        setState(`GitHub returned an error fetching commit details (status ${detailRes.status}).`, true);
+        return;
+      }
+
+      const commit = await detailRes.json();
+      const commitDate = commit.commit?.author?.date || commit.commit?.committer?.date;
+      const author = commit.commit?.author?.name || 'Unknown';
+      const message = (commit.commit?.message || '').split('\n')[0];
+      const sha = commit.sha ? commit.sha.slice(0, 7) : '';
+      const files = Array.isArray(commit.files) ? commit.files : [];
+
+      const dateObj = new Date(commitDate);
+      const formatted = dateObj.toLocaleString(undefined, {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+      });
+
+      const taskListHtml = files.length
+        ? files.map(f => `
+            <div class="task-item">
+              <span class="task-status ${escapeHtml(f.status || '')}">${escapeHtml(statusLabel(f.status))}</span>
+              <span class="task-file">${escapeHtml(f.filename || '')}</span>
+            </div>
+          `).join('')
+        : `<div class="no-files">File list unavailable for this commit.</div>`;
+
+      resultArea.innerHTML = `
+        <div class="ledger">
+          <div class="ledger-line"></div>
+          <div class="node-row">
+            <span class="node"></span>
+            <div style="flex:1; min-width:0;">
+              <div class="repo-name">${escapeHtml(parsed.owner)}/${escapeHtml(parsed.repo)}</div>
+              <div class="commit-msg">${escapeHtml(message || '(no commit message)')}</div>
+              <div class="meta-row">
+                <span class="hash">#${escapeHtml(sha)}</span>
+                <span>by ${escapeHtml(author)}</span>
+              </div>
+              <div class="timestamp-block">
+                <div class="timestamp-label">Last commit</div>
+                <div class="timestamp-big">${formatted}</div>
+                <div class="relative-time">${relativeTime(commitDate)}</div>
+              </div>
+              <div class="tasks-block">
+                <div class="tasks-label">
+                  <span>Tasks done in this commit (${files.length})</span>
+                  <span class="exec-time">executed ${formatted}</span>
+                </div>
+                <div class="task-list">
+                  ${taskListHtml}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    } catch (err) {
+      setState('Something went wrong reaching GitHub. Check your connection and try again.', true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Check';
+    }
+  });
+</script>
+
+</body>
+</html>
